@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "AURA",
+    "slug": "aura-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "aura",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "backgroundColor": "#0A1210"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.algaedecarbon.aura"
+    },
+    "android": {
+      "package": "com.algaedecarbon.aura",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0A1210"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/images/favicon.png"
+    }
+  }
+}
