@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, RefreshControl, ScrollView, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Svg, { Circle, Line as SvgLine, Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedScreen } from '../components/ThemedScreen';
@@ -588,6 +589,10 @@ function MetricGrid({
 
 export function EnvironmentScreen() {
   const { spacing, colors, radius } = useTheme();
+  // See DashboardScreen.tsx's identical comment - the floating tab bar
+  // doesn't reserve layout space, so bottom padding must add its height
+  // explicitly or the last bit of content ends up hidden underneath it.
+  const tabBarHeight = useBottomTabBarHeight();
   const { devices, selectedDeviceId, fetchDevices } = useDeviceStore();
   const device = devices.find((d) => d.id === selectedDeviceId);
 
@@ -712,7 +717,7 @@ export function EnvironmentScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingBottom: spacing.xl, gap: spacing.lg }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + spacing.xl, gap: spacing.lg }}
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <ThemedText variant="semiBold" style={{ fontSize: 22, color: colors.textPrimary }}>

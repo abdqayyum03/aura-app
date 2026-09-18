@@ -87,6 +87,14 @@ export const METRIC_RANGES: Record<MetricType, { min: number; max: number; unit:
   // desktop/office-scale tank, NOT a confirmed hardware/tank-capacity limit -
   // tighten once tank volume + expected max culture density are confirmed.
   [MetricType.BIOMASS]: { min: 0, max: 10000, unit: 'g' },
+  // CO2_ABSORBED/O2_RELEASED are server-computed (mqtt-ingestion.service.ts's
+  // withImpactMetrics, via biomass-calculation.ts) and NEVER go through this
+  // device-payload validation path at all - these two entries exist purely
+  // so METRIC_RANGES stays a complete Record<MetricType, ...> (forcing any
+  // future metric addition to consciously pick a range), not because a
+  // device-published value for either is ever actually checked against them.
+  [MetricType.CO2_ABSORBED]: { min: 0, max: 20000, unit: 'g' }, // 1.7x BIOMASS's max
+  [MetricType.O2_RELEASED]: { min: 0, max: 20000, unit: 'g' }, // 1.35x BIOMASS's max, rounded up
 };
 
 export interface ValidatedReading {

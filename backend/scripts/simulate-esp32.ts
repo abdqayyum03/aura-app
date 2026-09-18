@@ -90,18 +90,29 @@ function buildPayload(deviceCode: string) {
 
 function main() {
   const { device, interval, brokerUrl } = parseArgs();
-  const topic = `aura/${device}/telemetry`;
+  const telemetryTopic = `aura/${device}/telemetry`;
+  // Backend -> device actuator commands (lighting/bubbling) - see
+  // backend/src/mqtt/ACTUATOR_CONTROL.md. Real firmware doesn't exist in
+  // confirmed form, so this simulator standing in for it also stands in for
+  // "the device received and applied the command" by just logging it - the
+  // same role it already plays for telemetry.
+  const commandTopic = `aura/${device}/command`;
 
   console.log(`[simulator] connecting to ${brokerUrl}`);
   const client = mqtt.connect(brokerUrl);
 
   client.on('connect', () => {
-    console.log(`[simulator] connected. publishing to ${topic} every ${interval}ms`);
+    console.log(`[simulator] connected. publishing to ${telemetryTopic} every ${interval}ms`);
+    console.log(`[simulator] listening for actuator commands on ${commandTopic}`);
     console.log('[simulator] press Ctrl+C to stop');
+
+    client.subscribe(commandTopic, (err) => {
+      if (err) console.error(`[simulator] failed to subscribe to ${commandTopic}:`, err.message);
+    });
 
     const publish = () => {
       const payload = buildPayload(device);
-      client.publish(topic, JSON.stringify(payload), (err) => {
+      client.publish(telemetryTopic, JSON.stringify(payload), (err) => {
         if (err) {
           console.error('[simulator] publish failed:', err.message);
         } else {
@@ -112,6 +123,16 @@ function main() {
 
     publish();
     setInterval(publish, interval);
+  });
+
+  client.on('message', (topic, payloadBuffer) => {
+    if (topic !== commandTopic) return;
+    try {
+      const command = JSON.parse(payloadBuffer.toString('utf-8'));
+      console.log(`[simulator] received actuator command: ${JSON.stringify(command)}`);
+    } catch {
+      console.warn(`[simulator] received command on ${commandTopic} but it wasn't valid JSON`);
+    }
   });
 
   client.on('error', (err) => {

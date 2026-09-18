@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { ThemedScreen } from '../components/ThemedScreen';
 import { ThemedText } from '../components/ThemedText';
 import { useTheme } from '../theme/ThemeContext';
@@ -9,6 +10,7 @@ import { ApiError } from '../api/client';
 
 export function LoginScreen() {
   const { colors, spacing, radius, typography } = useTheme();
+  const navigation = useNavigation<any>();
   const setTokens = useAuthStore((s) => s.setTokens);
 
   const [email, setEmail] = useState('');
@@ -100,6 +102,15 @@ export function LoginScreen() {
               Log in
             </ThemedText>
           )}
+        </Pressable>
+
+        <Pressable
+          onPress={() => navigation.navigate('Signup')}
+          style={{ marginTop: spacing.lg, alignItems: 'center' }}
+        >
+          <ThemedText variant="caption" style={{ color: colors.textSecondary }}>
+            Don't have an account? <ThemedText variant="caption" color="primary">Sign up</ThemedText>
+          </ThemedText>
         </Pressable>
       </View>
     </ThemedScreen>

@@ -17,7 +17,11 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const systemScheme = useColorScheme() ?? 'light';
+  // useColorScheme() can return 'unspecified' (Android) or null/undefined in
+  // addition to 'light'/'dark' - anything that isn't explicitly 'dark' falls
+  // back to 'light', same fallback intent as the old `?? 'light'`.
+  const rawScheme = useColorScheme();
+  const systemScheme: 'light' | 'dark' = rawScheme === 'dark' ? 'dark' : 'light';
   const [mode, setMode] = useState<ThemeMode>('system');
 
   const resolvedScheme = mode === 'system' ? systemScheme : mode;

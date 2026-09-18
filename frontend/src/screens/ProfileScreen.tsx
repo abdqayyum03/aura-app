@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Linking, ScrollView, Switch, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { ThemedScreen } from '../components/ThemedScreen';
 import { ThemedText } from '../components/ThemedText';
@@ -336,6 +337,7 @@ function SwitchRow({
 
 export function ProfileScreen() {
   const { colors, spacing, radius } = useTheme();
+  const navigation = useNavigation<any>();
   const tabBarHeight = useBottomTabBarHeight();
   const { accessToken, clearTokens } = useAuthStore();
   const { devices } = useDeviceStore();
@@ -473,6 +475,15 @@ export function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        </Section>
+
+        <Section title="Alerts">
+          <Row
+            first
+            icon="options-outline"
+            label="Alert Thresholds"
+            onPress={() => navigation.navigate('AlertThresholds')}
+          />
         </Section>
 
         <Section title="Terminal Diagnostics">

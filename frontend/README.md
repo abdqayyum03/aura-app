@@ -1,19 +1,37 @@
 # AURA App (Expo + React Native)
 
-Mobile dashboard for the AURA air regenerator. Covers **Prompt 8 (scaffold &
-theming)** of the frontend build plan.
+Mobile dashboard for the AURA air regenerator.
 
-## What's included so far
+**Status:** all of Prompts 8-13 of the original build plan are implemented (scaffold,
+theming, all 5 tabs). See [`../docs/AURA_SRS_v1.0.docx`](../docs/AURA_SRS_v1.0.docx) and
+[`../docs/AURA_SAD_v1.0.docx`](../docs/AURA_SAD_v1.0.docx) for the full, current picture —
+this README covers setup only.
+
+## What's included
 - Expo + TypeScript project, React Navigation (bottom tabs + auth stack)
-- Design token system (`src/theme/tokens.ts`) - Bio-Green/Cyber-Blue palette,
-  light/dark mode, Inter + JetBrains Mono typography pairing
+- Design token system (`src/theme/tokens.ts`) - a "Deep Sea Biotech" (cyan/violet/
+  magenta) dark palette derived from an AI-generated design export; **light mode is an
+  unvalidated placeholder, not a finished design** - see the SAD §7
 - Typed API client (`src/api/client.ts`) with automatic access-token refresh
   on 401 (deduped against concurrent requests)
 - Zustand stores for auth (persisted to SecureStore) and devices
-- A minimally functional login screen (enough to verify the full loop end to
-  end) - Prompt 9 replaces this with the polished auth + pairing flow
-- Placeholder screens for the four main tabs (Dashboard, Environment,
-  Internal, Maintenance) - built out in Prompts 10-13
+- Login, Signup, and Device Pairing screens - a fresh install can sign up and pair a
+  device entirely from the app, no API workarounds needed (closed 2026-09-18, see
+  CLAUDE.md)
+- Dashboard, Environment, Internal, Maintenance, and Profile screens - all fully built
+  out, not placeholders
+- Dashboard "Environmental Impact" widget (CO2 absorbed / O2 released, derived
+  server-side from biomass) and a "Lighting & Bubbling" actuator card (on/off, color,
+  intensity presets, bubbling speed presets)
+- Alert Thresholds screen - per-device green/amber band editing, reachable from Profile
+- Real push notifications on alert transitions (Expo push service, requires an EAS
+  project link - see `PUSH_NOTIFICATIONS.md` in the backend for the one-time setup and
+  the Expo-Go-on-Android platform constraint)
+
+**Not included:** a true harvest-aware *lifetime cumulative* CO2/O2 total (today's
+Impact widget is tied to the current biomass level only), notification-tap
+deep-linking, and per-user notification preferences - see the SRS's traceability table
+(§8) for the full gap list.
 
 ## Prerequisites
 - Node.js 20+
@@ -59,8 +77,8 @@ If you're testing in an emulator instead of a physical phone:
 | `npm run typecheck` | TypeScript check with no build output |
 
 ## What's next
-- **Prompt 9:** Full auth screens + device pairing flow
-- **Prompt 10:** Dashboard screen (Impact widget, Photoperiod Ring, live Socket.io updates)
-- **Prompt 11:** Environment Data screen (granularity toggle, scrubber chart)
-- **Prompt 12:** AURA Internal screen (radial gauges, color swatch)
-- **Prompt 13:** Maintenance & alerts screen, push notifications
+
+See [`../docs/AURA_SRS_v1.0.docx`](../docs/AURA_SRS_v1.0.docx) §9 for the full, current
+recommended-next-steps list (confirming placeholder contracts with the client, deciding
+whether the Impact widget should become a true harvest-aware lifetime cumulative total,
+and the B2B/multi-user gap).

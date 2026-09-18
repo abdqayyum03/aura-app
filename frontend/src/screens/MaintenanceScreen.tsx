@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Modal, RefreshControl, ScrollView, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { ThemedScreen } from '../components/ThemedScreen';
 import { ThemedText } from '../components/ThemedText';
 import { ErrorState } from '../components/ErrorState';
@@ -30,13 +31,19 @@ const LOGGABLE_TYPES: MaintenanceType[] = [
 type StatusKind = 'scheduled' | 'upcoming' | 'action_req' | 'not_logged';
 
 function statusFor(item: MaintenanceCountdownDto): { kind: StatusKind; label: string } {
-  if (item.daysRemaining === null) return { kind: 'not_logged', label: 'NOT LOGGED' };
+  // overdue is checked FIRST - a turbidity-triggered harvest (see
+  // turbidityNow/turbidityReadyThreshold) can be overdue:true even when
+  // daysRemaining is still null (never logged before) or positive (not yet
+  // due by the calendar), and that must win over both of those.
   if (item.overdue) return { kind: 'action_req', label: 'ACTION REQ' };
+  if (item.daysRemaining === null) return { kind: 'not_logged', label: 'NOT LOGGED' };
   if (item.daysRemaining <= 3) return { kind: 'upcoming', label: 'UPCOMING' };
   return { kind: 'scheduled', label: 'SCHEDULED' };
 }
 
 function countdownChip(item: MaintenanceCountdownDto): string {
+  // Same ordering reason as statusFor above.
+  if (item.overdue && item.turbidityNow !== null) return 'READY';
   if (item.daysRemaining === null) return 'NOT LOGGED';
   if (item.daysRemaining === 0) return 'TODAY';
   return `T-${item.daysRemaining}D`;
@@ -69,6 +76,13 @@ function CriticalBanner({ item, onLogNow }: { item: MaintenanceCountdownDto; onL
   const { colors, spacing, radius } = useTheme();
   const meta = TYPE_META[item.type];
   const overdueDays = item.daysRemaining !== null ? Math.abs(item.daysRemaining) : null;
+  // Turbidity can force overdue:true while daysRemaining is still null/
+  // positive (not yet due by the calendar) - Math.abs(daysRemaining) in that
+  // case would print a backwards "overdue by 3 days" for something that's
+  // actually 3 days BEFORE its calendar due date. Detect that case and use
+  // a turbidity-specific message instead.
+  const isTurbidityTriggered =
+    item.turbidityNow !== null && (item.daysRemaining === null || item.daysRemaining >= 0);
 
   return (
     <PulsingGlow color={colors.redContainer}>
@@ -98,9 +112,11 @@ function CriticalBanner({ item, onLogNow }: { item: MaintenanceCountdownDto; onL
           {meta.label}
         </ThemedText>
         <ThemedText variant="body" style={{ color: colors.textSecondary, fontSize: 13, marginTop: 2, lineHeight: 18 }}>
-          {overdueDays !== null
-            ? `Overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}. Log this action once it's been completed to reset the countdown.`
-            : "This hasn't been logged yet - record it once completed."}
+          {isTurbidityTriggered
+            ? `Turbidity is ${item.turbidityNow} NTU, at or above the ${item.turbidityReadyThreshold} NTU harvest-ready level. Log this action once it's been completed.`
+            : overdueDays !== null
+              ? `Overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}. Log this action once it's been completed to reset the countdown.`
+              : "This hasn't been logged yet - record it once completed."}
         </ThemedText>
 
         <TouchableOpacity
@@ -183,6 +199,10 @@ function ScheduledOperationsPod({ items }: { items: MaintenanceCountdownDto[] })
                       ? `Every ${item.intervalDays}d once started`
                       : 'Logged for record-keeping only'
                     : `Due in ${item.daysRemaining}d`}
+                  {/* Harvest also tracks turbidity toward the ready threshold -
+                      not overdue yet here (this pod only shows non-overdue
+                      items), so just progress context. */}
+                  {item.turbidityNow !== null ? ` · Turbidity ${item.turbidityNow}/${item.turbidityReadyThreshold} NTU` : ''}
                 </ThemedText>
               </View>
             </View>
@@ -453,6 +473,13 @@ function LogActionModal({
 
 export function MaintenanceScreen() {
   const { colors, spacing } = useTheme();
+  // MainTabNavigator's tab bar is position:'absolute' (a floating/blurred
+  // bar, not normal layout flow), so it overlays screen content rather than
+  // reserving space for it - anything positioned relative to the screen's
+  // own bottom edge (this screen's FAB, the ScrollView's bottom padding)
+  // needs to explicitly add this on top of its own spacing or it ends up
+  // underneath the bar. Same fix ProfileScreen.tsx already uses.
+  const tabBarHeight = useBottomTabBarHeight();
   const { devices, selectedDeviceId, fetchDevices } = useDeviceStore();
   const device = devices.find((d) => d.id === selectedDeviceId);
 
@@ -518,7 +545,7 @@ export function MaintenanceScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadOverview} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingBottom: 96, gap: spacing.lg }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + spacing.xl, gap: spacing.lg }}
       >
         {error && <ErrorState message={error} onRetry={loadOverview} />}
 
@@ -533,7 +560,7 @@ export function MaintenanceScreen() {
         onPress={() => openModal('water_change')}
         style={{
           position: 'absolute',
-          bottom: spacing.lg,
+          bottom: tabBarHeight + spacing.lg,
           right: spacing.lg,
           width: 56,
           height: 56,

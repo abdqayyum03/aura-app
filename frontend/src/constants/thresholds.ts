@@ -19,7 +19,18 @@ export const THRESHOLDS: Partial<Record<MetricType, ThresholdBand>> = {
   turbidity: { greenMin: 0, greenMax: 50, amberMin: 0, amberMax: 100 },
   light_intensity: { greenMin: 100, greenMax: 1000, amberMin: 50, amberMax: 1500 },
   water_level: { greenMin: 50, greenMax: 100, amberMin: 30, amberMax: 100 },
-  biomass: { greenMin: 0, greenMax: 500, amberMin: 0, amberMax: 800 }, // new (Aug 2026)
+  // Recalibrated (2026-09-18) to the REAL ceiling of the backend's RGB->OD->
+  // biomass formula (biomass-calculation.ts), not an arbitrary display range.
+  // The OD-from-hue quadratic has a hard maximum (~2.95 OD680, at hue~123.5°)
+  // regardless of RGB input, which caps biomass concentration at ~1.025 g/L -
+  // for the default 10L tank (Device.tankVolumeLiters), that's a hard ceiling
+  // of ~10.25g, not the 0-900g range this used to assume (which was tuned to
+  // the ESP32 simulator's arbitrary walker bounds, not the real formula).
+  // Assumes the default 10L tank volume - would need to scale with
+  // tankVolumeLiters if a non-default tank size ever ships (no per-device
+  // volume is exposed to the frontend yet - see AURA_SAD_v1.0.docx §5.1 for
+  // the "narrow schema, generic pipeline" pattern this would extend).
+  biomass: { greenMin: 0, greenMax: 6, amberMin: 0, amberMax: 9 },
 };
 
 // Gauge display domain - matches the simulator's realistic sensor bounds,
@@ -30,5 +41,5 @@ export const GAUGE_DOMAIN: Partial<Record<MetricType, { min: number; max: number
   turbidity: { min: 0, max: 100 },
   light_intensity: { min: 0, max: 2000 },
   water_level: { min: 0, max: 100 },
-  biomass: { min: 0, max: 900 }, // new (Aug 2026), matches simulator's walker bound
+  biomass: { min: 0, max: 12 }, // recalibrated (2026-09-18) - see THRESHOLDS.biomass comment above
 };

@@ -53,7 +53,9 @@ export class CoreSchema1000000000001 implements MigrationInterface {
         "created_at" timestamptz NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE INDEX "idx_maintenance_device_id" ON "maintenance_logs" ("device_id");`);
+    await queryRunner.query(
+      `CREATE INDEX "idx_maintenance_device_id" ON "maintenance_logs" ("device_id");`,
+    );
 
     await queryRunner.query(`
       CREATE TYPE "metric_type_enum" AS ENUM (

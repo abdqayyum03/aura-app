@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Animated, RefreshControl, ScrollView, Switch, TouchableOpacity, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedScreen } from '../components/ThemedScreen';
@@ -10,7 +11,9 @@ import { useDeviceStore } from '../store/deviceStore';
 import { useRealtimeReadings } from '../api/realtime';
 import { readingsApi } from '../api/readings';
 import { alertsApi } from '../api/alerts';
-import { AlertEventDto, CurrentReadings, ReadingBucket } from '../api/types';
+import { devicesApi } from '../api/devices';
+import { ApiError } from '../api/client';
+import { AlertEventDto, BubblingSpeed, CurrentReadings, Device, ReadingBucket, UpdateActuatorStateBody } from '../api/types';
 import { GAUGE_DOMAIN, THRESHOLDS, ThresholdBand } from '../constants/thresholds';
 
 function clamp(v: number, min: number, max: number) {
@@ -207,6 +210,79 @@ function SystemStatusCard({
   );
 }
 
+// --- Impact Widget (CO2 removed / O2 released / biomass generated) --------
+// Matches the client spec's Dashboard "Impact Widget" hero section. Values
+// come through the same /current endpoint as every other metric - no extra
+// API call - because they're server-computed regular sensor_readings now
+// (mqtt-ingestion.service.ts's withImpactMetrics, via
+// backend/src/mqtt/biomass-calculation.ts), not a special aggregation.
+// Shows the CO2/O2 associated with the CURRENT biomass level, not a
+// harvest-aware lifetime total - see biomass-calculation.ts's "SCOPE
+// BOUNDARY" note for why that's a deliberate, documented gap, not an oversight.
+function ImpactStat({
+  icon,
+  label,
+  value,
+  tint,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: number | undefined;
+  tint: string;
+}) {
+  const { colors, spacing, radius } = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.surfaceLow,
+        borderRadius: radius.md,
+        padding: spacing.sm + 4,
+        borderWidth: 1,
+        borderColor: `${colors.primary}0D`,
+        alignItems: 'center',
+      }}
+    >
+      <Ionicons name={icon} size={16} color={tint} style={{ marginBottom: 4 }} />
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
+        <ThemedText variant="mono" style={{ color: colors.textPrimary, fontSize: 18 }}>
+          {value !== undefined ? value.toFixed(1) : '—'}
+        </ThemedText>
+        <ThemedText variant="caption" style={{ color: colors.textMuted, fontSize: 10 }}>
+          g
+        </ThemedText>
+      </View>
+      <ThemedText variant="label" style={{ color: colors.textSecondary, fontSize: 8, marginTop: 2 }}>
+        {label}
+      </ThemedText>
+    </View>
+  );
+}
+
+function ImpactWidget({ readings }: { readings: CurrentReadings['readings'] }) {
+  const { colors, spacing, radius } = useTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: `${colors.surface}CC`,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        borderWidth: 1,
+        borderColor: `${colors.primary}1A`,
+      }}
+    >
+      <ThemedText variant="label" style={{ color: colors.textSecondary, marginBottom: spacing.sm }}>
+        Environmental Impact
+      </ThemedText>
+      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+        <ImpactStat icon="cloud-outline" label="CO2 REMOVED" value={readings.co2_absorbed} tint={colors.primary} />
+        <ImpactStat icon="leaf-outline" label="O2 RELEASED" value={readings.o2_released} tint={colors.green} />
+        <ImpactStat icon="water-outline" label="BIOMASS" value={readings.biomass} tint={colors.secondary} />
+      </View>
+    </View>
+  );
+}
+
 // --- Real biomass gauge (grams, real safe zones from constants/thresholds) -
 // Replaces the old turbidity-based "Algae Density" ring now that a real
 // biomass metric exists (see constants/thresholds.ts, Aug 2026 addition).
@@ -259,7 +335,10 @@ function BiomassRing({ biomass }: { biomass: number | undefined }) {
         </Svg>
         <View style={{ position: 'absolute', alignItems: 'center' }}>
           <ThemedText variant="mono" style={{ color: colors.textPrimary, fontSize: 16 }}>
-            {biomass !== undefined ? biomass.toFixed(0) : '—'}
+            {/* 1 decimal, not 0 - real range is ~0-10g (see
+                constants/thresholds.ts), where whole-gram rounding would
+                hide almost all of the actual variation. */}
+            {biomass !== undefined ? biomass.toFixed(1) : '—'}
           </ThemedText>
           <ThemedText variant="caption" style={{ color: colors.textMuted, fontSize: 9 }}>
             GRAMS
@@ -319,7 +398,12 @@ function buildInsight(readings: CurrentReadings['readings'], alerts: AlertEventD
   if (amberAlert) {
     return `${amberAlert.metricType.replace('_', ' ')} is drifting outside its nominal range - worth checking soon.`;
   }
-  if (readings.biomass !== undefined && readings.biomass >= 700) {
+  // Matches THRESHOLDS.biomass.amberMax (constants/thresholds.ts) - real
+  // range is ~0-10g for the default 10L tank, not the old 700g threshold
+  // (which was calibrated to the simulator's arbitrary pre-formula walker
+  // and had become unreachable once the real RGB->OD->biomass ceiling was
+  // implemented server-side, ~10.25g max).
+  if (readings.biomass !== undefined && readings.biomass >= 9) {
     return 'Biomass is approaching harvest range. Consider scheduling a harvest to optimize CO2 absorption.';
   }
   return 'All systems nominal. Algae culture is operating within safe parameters.';
@@ -412,9 +496,210 @@ function PhotoperiodRing({ lightStartHour, lightDurationHours }: { lightStartHou
   );
 }
 
+// --- Actuator controls (lighting, bubbling) --------------------------------
+// See backend/src/mqtt/ACTUATOR_CONTROL.md. This reflects DESIRED state (the
+// device.* fields, as last sent to the backend) - there is no acknowledgement
+// from the device, so there's no separate "applied" state to show here.
+const LIGHT_INTENSITY_PRESETS = [25, 50, 75, 100] as const;
+
+const MIX_COLOR_PRESETS = [
+  { label: 'Amber', hex: '#FFB347' },
+  { label: 'Cyan', hex: '#00E5FF' },
+  { label: 'Violet', hex: '#8B5CF6' },
+  { label: 'Green', hex: '#22C55E' },
+  { label: 'Pink', hex: '#EC4899' },
+];
+
+const BUBBLING_PRESETS: { value: BubblingSpeed; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'slow', label: 'Slow' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'vigorous', label: 'Vigorous' },
+];
+
+function PresetChip({
+  label,
+  active,
+  onPress,
+  pending,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  pending: boolean;
+}) {
+  const { colors, spacing, radius } = useTheme();
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={pending}
+      style={{
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        borderRadius: radius.pill,
+        borderWidth: 1,
+        borderColor: active ? colors.primary : colors.border,
+        backgroundColor: active ? colors.primary : 'transparent',
+        opacity: pending ? 0.5 : 1,
+      }}
+    >
+      <ThemedText variant="label" style={{ color: active ? colors.primaryOnFill : colors.textSecondary, fontSize: 10 }}>
+        {label}
+      </ThemedText>
+    </TouchableOpacity>
+  );
+}
+
+function ActuatorControlsCard({
+  device,
+  onUpdate,
+}: {
+  device: Device;
+  onUpdate: (patch: UpdateActuatorStateBody) => Promise<void>;
+}) {
+  const { colors, spacing, radius } = useTheme();
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handle = async (key: string, patch: UpdateActuatorStateBody) => {
+    setError(null);
+    setPendingKey(key);
+    try {
+      await onUpdate(patch);
+    } catch (err) {
+      setError(err instanceof ApiError ? (err.body as any)?.message ?? 'Update failed' : 'Network error');
+    } finally {
+      setPendingKey(null);
+    }
+  };
+
+  return (
+    <View
+      style={{
+        backgroundColor: `${colors.surface}CC`,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        borderWidth: 1,
+        borderColor: `${colors.primary}1A`,
+      }}
+    >
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+        <ThemedText variant="label" style={{ color: colors.textSecondary }}>
+          Lighting &amp; Bubbling
+        </ThemedText>
+        {pendingKey && <ActivityIndicator size="small" color={colors.primary} />}
+      </View>
+
+      {error && (
+        <ThemedText variant="caption" style={{ color: colors.red, marginBottom: spacing.sm }}>
+          {error}
+        </ThemedText>
+      )}
+
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: spacing.md,
+        }}
+      >
+        <ThemedText variant="body" style={{ color: colors.textPrimary }}>
+          Light
+        </ThemedText>
+        <Switch
+          value={device.lightOn}
+          onValueChange={(v) => handle('lightOn', { lightOn: v })}
+          disabled={pendingKey === 'lightOn'}
+          trackColor={{ true: colors.primary, false: colors.surfaceElevated }}
+          thumbColor={colors.background}
+        />
+      </View>
+
+      <ThemedText variant="caption" style={{ color: colors.textMuted, marginBottom: spacing.xs }}>
+        Color
+      </ThemedText>
+      <View style={{ flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.sm }}>
+        <PresetChip
+          label="White"
+          active={device.lightColorMode === 'white'}
+          pending={pendingKey === 'lightColorMode'}
+          onPress={() => handle('lightColorMode', { lightColorMode: 'white' })}
+        />
+        <PresetChip
+          label="Mix"
+          active={device.lightColorMode === 'mix'}
+          pending={pendingKey === 'lightColorMode'}
+          onPress={() => handle('lightColorMode', { lightColorMode: 'mix' })}
+        />
+      </View>
+
+      {device.lightColorMode === 'mix' && (
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md }}>
+          {MIX_COLOR_PRESETS.map((c) => {
+            const active = device.lightColorHex?.toLowerCase() === c.hex.toLowerCase();
+            return (
+              <TouchableOpacity
+                key={c.hex}
+                onPress={() => handle('lightColorHex', { lightColorHex: c.hex })}
+                disabled={pendingKey === 'lightColorHex'}
+                accessibilityLabel={c.label}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  backgroundColor: c.hex,
+                  borderWidth: active ? 2 : 1,
+                  borderColor: active ? colors.textPrimary : colors.border,
+                  opacity: pendingKey === 'lightColorHex' ? 0.5 : 1,
+                }}
+              />
+            );
+          })}
+        </View>
+      )}
+
+      <ThemedText variant="caption" style={{ color: colors.textMuted, marginBottom: spacing.xs }}>
+        Intensity
+      </ThemedText>
+      <View style={{ flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md }}>
+        {LIGHT_INTENSITY_PRESETS.map((pct) => (
+          <PresetChip
+            key={pct}
+            label={`${pct}%`}
+            active={device.lightIntensityPercent === pct}
+            pending={pendingKey === 'lightIntensityPercent'}
+            onPress={() => handle('lightIntensityPercent', { lightIntensityPercent: pct })}
+          />
+        ))}
+      </View>
+
+      <ThemedText variant="caption" style={{ color: colors.textMuted, marginBottom: spacing.xs }}>
+        Bubbling
+      </ThemedText>
+      <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' }}>
+        {BUBBLING_PRESETS.map((b) => (
+          <PresetChip
+            key={b.value}
+            label={b.label}
+            active={device.bubblingSpeed === b.value}
+            pending={pendingKey === 'bubblingSpeed'}
+            onPress={() => handle('bubblingSpeed', { bubblingSpeed: b.value })}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function DashboardScreen() {
   const { colors, spacing, radius } = useTheme();
-  const { devices, selectedDeviceId, isLoading, fetchDevices } = useDeviceStore();
+  // MainTabNavigator's tab bar is position:'absolute' (floats over content
+  // rather than reserving layout space) - ScrollView bottom padding must add
+  // this explicitly or the last bit of content ends up hidden underneath it.
+  // Same bug/fix as MaintenanceScreen.tsx's FAB and ProfileScreen's own padding.
+  const tabBarHeight = useBottomTabBarHeight();
+  const { devices, selectedDeviceId, isLoading, fetchDevices, updateDeviceLocally } = useDeviceStore();
   const device = devices.find((d) => d.id === selectedDeviceId);
   const { lastEvent, connected } = useRealtimeReadings(selectedDeviceId);
 
@@ -484,6 +769,12 @@ export function DashboardScreen() {
     await loadExtras();
   };
 
+  const handleActuatorUpdate = async (patch: UpdateActuatorStateBody) => {
+    if (!selectedDeviceId) return;
+    const updated = await devicesApi.updateActuatorState(selectedDeviceId, patch);
+    updateDeviceLocally(updated);
+  };
+
   if (!device) {
     return (
       <ThemedScreen screenLabel="Home">
@@ -497,7 +788,7 @@ export function DashboardScreen() {
       <ScrollView
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={handleRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: spacing.xl, gap: spacing.gutter }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + spacing.xl, gap: spacing.gutter }}
       >
         {error && <ErrorState message={error} onRetry={loadExtras} />}
 
@@ -508,6 +799,8 @@ export function DashboardScreen() {
           online={connected}
           alerts={activeAlerts}
         />
+
+        <ImpactWidget readings={currentReadings?.readings ?? {}} />
 
         <View style={{ flexDirection: 'row', gap: spacing.gutter }}>
           <BiomassRing biomass={biomassReading} />
@@ -549,6 +842,8 @@ export function DashboardScreen() {
             </ThemedText>
           </View>
         </View>
+
+        <ActuatorControlsCard device={device} onUpdate={handleActuatorUpdate} />
       </ScrollView>
     </ThemedScreen>
   );

@@ -3,11 +3,16 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AlertEvent } from '../database/entities/alert-event.entity';
 import { AlertThreshold } from '../database/entities/alert-threshold.entity';
 import { DevicesModule } from '../devices/devices.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AlertsController } from './alerts.controller';
 import { AlertsService } from './alerts.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AlertEvent, AlertThreshold]), DevicesModule],
+  imports: [
+    TypeOrmModule.forFeature([AlertEvent, AlertThreshold]),
+    DevicesModule,
+    NotificationsModule,
+  ],
   controllers: [AlertsController],
   providers: [AlertsService],
 })

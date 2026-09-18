@@ -8,15 +8,18 @@ import { AuthModule } from './auth/auth.module';
 import { DevicesModule } from './devices/devices.module';
 import { RedisModule } from './common/redis/redis.module';
 import { MqttModule } from './mqtt/mqtt.module';
+import { MqttCommandPublisherModule } from './mqtt/mqtt-command-publisher.module';
 import { SensorsModule } from './sensors/sensors.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { User } from './database/entities/user.entity';
 import { Device } from './database/entities/device.entity';
 import { SensorReading } from './database/entities/sensor-reading.entity';
 import { MaintenanceLog } from './database/entities/maintenance-log.entity';
 import { AlertEvent } from './database/entities/alert-event.entity';
 import { AlertThreshold } from './database/entities/alert-threshold.entity';
+import { PushToken } from './database/entities/push-token.entity';
 
 @Module({
   imports: [
@@ -32,7 +35,15 @@ import { AlertThreshold } from './database/entities/alert-threshold.entity';
         username: config.get<string>('DB_USERNAME'),
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_DATABASE'),
-        entities: [User, Device, SensorReading, MaintenanceLog, AlertEvent, AlertThreshold],
+        entities: [
+          User,
+          Device,
+          SensorReading,
+          MaintenanceLog,
+          AlertEvent,
+          AlertThreshold,
+          PushToken,
+        ],
         synchronize: false, // migrations own the schema - see src/database/migrations
         logging: config.get<string>('NODE_ENV') === 'development',
       }),
@@ -42,9 +53,11 @@ import { AlertThreshold } from './database/entities/alert-threshold.entity';
     DevicesModule,
     RedisModule,
     MqttModule,
+    MqttCommandPublisherModule,
     SensorsModule,
     AlertsModule,
     MaintenanceModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

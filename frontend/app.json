@@ -11,7 +11,9 @@
       "image": "./assets/images/splash-icon.png",
       "backgroundColor": "#0A1210"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.algaedecarbon.aura"
@@ -26,6 +28,23 @@
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "color": "#00e5ff"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "79b206fe-fa7b-489f-beea-5435854b962b"
+      }
+    },
+    "owner": "abdqayyum03"
   }
 }

@@ -9,6 +9,9 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+export type LightColorMode = 'white' | 'mix';
+export type BubblingSpeed = 'off' | 'slow' | 'moderate' | 'vigorous';
+
 export interface Device {
   id: string;
   deviceCode: string;
@@ -17,9 +20,25 @@ export interface Device {
   status: 'active' | 'offline' | 'maintenance';
   lightStartHour: number;
   lightDurationHours: number;
+  // Actuator DESIRED state (added 2026-09-18) - optimistic, not confirmed-
+  // applied by the device. See backend/src/mqtt/ACTUATOR_CONTROL.md.
+  lightOn: boolean;
+  lightColorMode: LightColorMode;
+  lightColorHex: string | null;
+  lightIntensityPercent: 25 | 50 | 75 | 100;
+  bubblingSpeed: BubblingSpeed;
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// Partial - any subset may be sent; the backend merges onto current state.
+export interface UpdateActuatorStateBody {
+  lightOn?: boolean;
+  lightColorMode?: LightColorMode;
+  lightColorHex?: string;
+  lightIntensityPercent?: 25 | 50 | 75 | 100;
+  bubblingSpeed?: BubblingSpeed;
 }
 
 export type MetricType =
@@ -37,7 +56,11 @@ export type MetricType =
   | 'color_r'
   | 'color_g'
   | 'color_b'
-  | 'biomass'; // new (Aug 2026)
+  | 'biomass' // new (Aug 2026)
+  // Server-computed from RGB (2026-09-18) - see backend
+  // mqtt/biomass-calculation.ts. Never device-published.
+  | 'co2_absorbed'
+  | 'o2_released';
 
 export type Granularity = '1h' | '1d' | '1w';
 
@@ -67,6 +90,19 @@ export interface AlertEventDto {
   message: string | null;
   resolvedAt: string | null;
   createdAt: string;
+}
+
+// Mirrors backend AlertsService.AlertThresholdView. One row per metric that
+// has a default band (color channels are intentionally excluded, same as
+// backend/src/alerts/default-thresholds.ts). isOverridden tells the UI
+// whether this device has its own row or is showing the shared default.
+export interface AlertThresholdDto {
+  metricType: MetricType;
+  greenMin: number;
+  greenMax: number;
+  amberMin: number;
+  amberMax: number;
+  isOverridden: boolean;
 }
 
 export type MaintenanceType =
@@ -104,6 +140,12 @@ export interface MaintenanceCountdownDto {
   nextDueAt: string | null;
   daysRemaining: number | null; // negative means overdue
   overdue: boolean;
+  // Only populated for 'harvest' - null for every other type. Turbidity
+  // crossing turbidityReadyThreshold forces overdue:true even when
+  // daysRemaining is still positive/null (see backend default-intervals.ts's
+  // HARVEST_READY_TURBIDITY_NTU).
+  turbidityNow: number | null;
+  turbidityReadyThreshold: number | null;
 }
 
 export interface MaintenanceOverviewDto {

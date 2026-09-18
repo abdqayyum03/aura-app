@@ -8,6 +8,10 @@ interface DeviceState {
   isLoading: boolean;
   fetchDevices: () => Promise<void>;
   selectDevice: (deviceId: string) => void;
+  // Replaces one device's entry with a fresher object already in hand (e.g.
+  // the response body of a PATCH), instead of refetching the whole list -
+  // used by actuator control updates on the Dashboard.
+  updateDeviceLocally: (device: Device) => void;
 }
 
 export const useDeviceStore = create<DeviceState>((set, get) => ({
@@ -38,4 +42,9 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
   },
 
   selectDevice: (deviceId) => set({ selectedDeviceId: deviceId }),
+
+  updateDeviceLocally: (device) =>
+    set((state) => ({
+      devices: state.devices.map((d) => (d.id === device.id ? device : d)),
+    })),
 }));

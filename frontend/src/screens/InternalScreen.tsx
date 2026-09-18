@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, View, TouchableOpacity } from 'react-native
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { ThemedScreen } from '../components/ThemedScreen';
 import { ThemedText } from '../components/ThemedText';
 import { ErrorState } from '../components/ErrorState';
@@ -251,6 +252,10 @@ function DiagnosticPanel({ r, g, b }: { r: number | undefined; g: number | undef
 export function InternalScreen() {
   const { colors, spacing, radius } = useTheme();
   const navigation = useNavigation<any>();
+  // See DashboardScreen.tsx's identical comment - the floating tab bar
+  // doesn't reserve layout space, so bottom padding must add its height
+  // explicitly or the last bit of content ends up hidden underneath it.
+  const tabBarHeight = useBottomTabBarHeight();
   const { devices, selectedDeviceId, fetchDevices } = useDeviceStore();
   const device = devices.find((d) => d.id === selectedDeviceId);
   const [currentReadings, setCurrentReadings] = useState<CurrentReadings | null>(null);
@@ -311,7 +316,7 @@ export function InternalScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingBottom: spacing.xl, gap: spacing.lg }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + spacing.xl, gap: spacing.lg }}
       >
         <View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

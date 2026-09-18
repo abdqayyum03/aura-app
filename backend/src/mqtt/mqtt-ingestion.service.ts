@@ -5,11 +5,16 @@ import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as mqtt from 'mqtt';
 import { MqttClient } from 'mqtt';
-import { SensorReading } from '../database/entities/sensor-reading.entity';
+import { MetricType, SensorReading } from '../database/entities/sensor-reading.entity';
 import { Device, DeviceStatus } from '../database/entities/device.entity';
 import { DevicesService } from '../devices/devices.service';
 import { RedisService } from '../common/redis/redis.service';
-import { TelemetryPayloadSchema, extractValidReadings } from './dto/telemetry-payload.schema';
+import {
+  TelemetryPayloadSchema,
+  ValidatedReading,
+  extractValidReadings,
+} from './dto/telemetry-payload.schema';
+import { deriveImpactMetrics } from './biomass-calculation';
 import { READING_CREATED_EVENT, ReadingCreatedEvent } from '../common/events/reading-created.event';
 
 const DEVICE_HEARTBEAT_TTL_SECONDS = 120; // if no message for 2 min, treat as offline (used by prompt 5/6)
@@ -115,8 +120,10 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     const device = await this.devicesService.findOrCreateByCode(deviceCode);
     const recordedAt = parsed.data.timestamp ? new Date(parsed.data.timestamp) : new Date();
 
+    const enrichedValid = this.withImpactMetrics(valid, device);
+
     await this.readings.insert(
-      valid.map((r) => ({
+      enrichedValid.map((r) => ({
         deviceId: device.id,
         metricType: r.metricType,
         value: r.value,
@@ -133,20 +140,53 @@ export class MqttIngestionService implements OnModuleInit, OnModuleDestroy {
     // Cache latest value per metric in Redis so a future "current readings"
     // endpoint (Prompt 5) doesn't have to hit Postgres on every dashboard poll.
     const currentValues: Record<string, string> = {};
-    for (const r of valid) {
+    for (const r of enrichedValid) {
       currentValues[r.metricType] = String(r.value);
     }
     await this.redis.hset(`device:${device.id}:current`, currentValues);
-    await this.redis.set(`device:${device.id}:last_seen`, recordedAt.toISOString(), DEVICE_HEARTBEAT_TTL_SECONDS);
+    await this.redis.set(
+      `device:${device.id}:last_seen`,
+      recordedAt.toISOString(),
+      DEVICE_HEARTBEAT_TTL_SECONDS,
+    );
 
     const event: ReadingCreatedEvent = {
       deviceId: device.id,
       deviceCode: device.deviceCode,
       recordedAt: recordedAt.toISOString(),
-      readings: valid,
+      readings: enrichedValid,
     };
     this.events.emit(READING_CREATED_EVENT, event);
 
-    this.logger.log(`Device ${deviceCode}: wrote ${valid.length} reading(s)`);
+    this.logger.log(`Device ${deviceCode}: wrote ${enrichedValid.length} reading(s)`);
+  }
+
+  // If this batch includes a full RGB triple, derive biomass/CO2/O2 from it
+  // server-side (see biomass-calculation.ts for why this runs here rather
+  // than on the ESP32) and append them as regular readings so they flow
+  // through the exact same insert/cache/realtime pipeline as everything
+  // else. If the device ALSO published a raw `biomass` value in this same
+  // batch, the RGB-derived one wins - it's dropped and replaced, not
+  // inserted twice - since RGB is the confirmed sensor and this is now the
+  // authoritative derivation path going forward.
+  private withImpactMetrics(valid: ValidatedReading[], device: Device): ValidatedReading[] {
+    const r = valid.find((v) => v.metricType === MetricType.COLOR_R);
+    const g = valid.find((v) => v.metricType === MetricType.COLOR_G);
+    const b = valid.find((v) => v.metricType === MetricType.COLOR_B);
+    if (!r || !g || !b) return valid;
+
+    const impact = deriveImpactMetrics(
+      { r: r.value, g: g.value, b: b.value },
+      device.tankVolumeLiters,
+    );
+
+    const withoutDeviceSentBiomass = valid.filter((v) => v.metricType !== MetricType.BIOMASS);
+
+    return [
+      ...withoutDeviceSentBiomass,
+      { metricType: MetricType.BIOMASS, value: impact.biomassGrams, unit: 'g' },
+      { metricType: MetricType.CO2_ABSORBED, value: impact.co2AbsorbedGrams, unit: 'g' },
+      { metricType: MetricType.O2_RELEASED, value: impact.o2ReleasedGrams, unit: 'g' },
+    ];
   }
 }

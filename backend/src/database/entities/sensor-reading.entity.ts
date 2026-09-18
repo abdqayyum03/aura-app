@@ -20,6 +20,10 @@ export enum MetricType {
   COLOR_G = 'color_g',
   COLOR_B = 'color_b',
   BIOMASS = 'biomass', // new (Aug 2026) - see migrations/005_add_biomass_metric.ts
+  // Server-computed (never device-published) - see
+  // mqtt/biomass-calculation.ts and migrations/007_add_impact_metrics.ts.
+  CO2_ABSORBED = 'co2_absorbed',
+  O2_RELEASED = 'o2_released',
 }
 
 @Entity('sensor_readings')

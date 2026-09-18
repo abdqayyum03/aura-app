@@ -1,5 +1,14 @@
 version: "3.9"
 
+# Explicit project name - without this, Compose derives the project name from
+# the current directory's basename ("backend"), which collides with any
+# OTHER project whose own backend folder is also named "backend" (e.g. a
+# sibling ATG808 project on the same machine). That collision is real, not
+# hypothetical: it displaced ATG808's redis container the first time both
+# projects' redis services were started back-to-back, because Compose
+# thought they were the same logical service under the same project.
+name: aura
+
 services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
@@ -24,7 +33,10 @@ services:
     container_name: aura-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Host port 6380, not the default 6379 - keeps this from ever fighting
+      # another local redis (Docker or a native one) for the same host port.
+      # Matches REDIS_PORT in .env/.env.example; update both together.
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:

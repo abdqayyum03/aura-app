@@ -86,6 +86,24 @@ are available, tighten them in `src/mqtt/dto/telemetry-payload.schema.ts`
 5. Is `waterLevel` a percentage, or a raw distance/depth reading from an
    ultrasonic sensor that needs conversion?
 
+## Biomass, CO2 absorbed, O2 released (added 2026-09-18)
+
+`readings.biomass` is now **derived server-side from `readings.color`** whenever a
+full RGB triple is present in the same payload - see
+`src/mqtt/biomass-calculation.ts` for the full RGB → HSV → OD680 → biomass → CO2/O2
+pipeline and its documented assumptions/known inconsistencies in the client's source
+formulas. If a payload sends both `readings.biomass` and a full `readings.color`, the
+RGB-derived value wins and the device-sent `biomass` is dropped, not inserted.
+
+A device that only sends `color` (no `biomass` field at all) is fully supported and is
+in fact the expected case going forward - RGB is the confirmed sensor, biomass is not.
+
+Two new metric types, `co2_absorbed` and `o2_released` (grams), are written alongside
+the computed `biomass` reading whenever RGB triggers this pipeline - both are
+server-computed only, never device-published, and use the client doc's "App" section
+ratios (1.7x / 1.35x biomass) rather than the "Sensor list" section's slightly
+different stoichiometric ratios (1.83x / 1.3x) - see biomass-calculation.ts for why.
+
 ## Testing without real hardware
 
 Run `npm run simulate:esp32` (see `scripts/simulate-esp32.ts`) to publish

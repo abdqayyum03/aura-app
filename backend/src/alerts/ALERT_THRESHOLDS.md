@@ -44,12 +44,27 @@ for an hour produces exactly one open `alert_events` row, not one every 5
 seconds. When the value returns to green, that row gets `resolved_at` set
 rather than being deleted, so alert history stays queryable.
 
+## Editing per-device thresholds (added 2026-09-18)
+
+`AlertsController` has three endpoints, all under `devices/:id/alerts/thresholds`,
+all ownership-checked the same way as every other device-scoped route:
+
+- `GET` - the full band for every metric with a default, showing the
+  device's override if it has one (`isOverridden: true`) or the shared
+  default otherwise.
+- `POST` - upsert an override for one metric. Server-side validates the same
+  invariant documented above (`amberMin <= greenMin <= greenMax <= amberMax`)
+  before saving, since a bad band saved once would misclassify every future
+  reading for that metric - 400s on a violation.
+- `DELETE /thresholds/:metricType` - remove the override, reverting to the
+  shared default. 404s if the device was already on the default (nothing to
+  delete) - `AlertsService.deleteThreshold` and `.upsertThreshold`.
+
+Frontend: `AlertThresholdsScreen.tsx`, reachable from Profile → Alerts →
+"Alert Thresholds".
+
 ## What's not built yet
 
-- Push notifications (FCM) - Prompt 6 logs a warning server-side on
+- Push notifications (FCM) - `alerts.service.ts` logs a warning server-side on
   transitions into amber/red; actual push delivery needs push token
-  registration, which happens in the frontend build (Prompt 13).
-- A UI/endpoint for editing per-device thresholds - the `alert_thresholds`
-  table exists and is read on every evaluation, but nothing writes to it yet.
-  Add a small CRUD endpoint here if the client wants to tune thresholds
-  without a code deploy before the demo.
+  registration, which doesn't exist in the frontend yet.

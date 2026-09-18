@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -8,6 +8,7 @@ import { EnvironmentScreen } from '../screens/EnvironmentScreen';
 import { InternalScreen } from '../screens/InternalScreen';
 import { MaintenanceScreen } from '../screens/MaintenanceScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { registerForPushNotificationsAsync } from '../notifications/registerPushNotifications';
 
 export type MainTabParamList = {
   Dashboard: undefined;
@@ -37,6 +38,15 @@ const LABELS: Record<keyof MainTabParamList, string> = {
 
 export function MainTabNavigator() {
   const { colors } = useTheme();
+
+  // Fires once each time this navigator mounts - which is exactly once per
+  // "reached Main" transition (RootNavigator only renders this component
+  // once a session has a paired device), matching the natural point where
+  // push notifications become meaningful. Best-effort, never throws or
+  // blocks rendering - see registerPushNotifications.ts.
+  useEffect(() => {
+    registerForPushNotificationsAsync();
+  }, []);
 
   return (
     <Tab.Navigator
